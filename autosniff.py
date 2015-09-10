@@ -3,25 +3,21 @@
 # Base decoderthread layout from the Impacket examples.
 
 import sys
-import string
-from threading import Thread
-
-import struct
-
-import time
-import socket
 import os
+import time
+
+import string
+import struct
 import re
+from threading import Thread
+import socket
+
 import pcapy
 from pcapy import findalldevs, open_live
 import impacket
 import impacket.ImpactPacket
 from impacket.ImpactDecoder import EthDecoder, LinuxSLLDecoder, IPDecoder
 
-########CONFIG#########
-sslsniff = False
-
-########CONFIG########
 
 class DecoderThread(Thread):
     def __init__(self, pcapObj,subnet,arptable):
@@ -45,29 +41,28 @@ class DecoderThread(Thread):
         # PacketHandler shall be invoked by pcap for every packet.
         self.pcap.loop(0, self.packetHandler)
 
-
     def packetHandler(self, hdr, data):
         e = self.decoder.decode(data)
         if e.get_ether_type() == impacket.ImpactPacket.IP.ethertype:
-          ip = e.child()
-          ttl = ip.get_ip_ttl()
-          ## Uneven but not 1 or 255 ttl means it's probably coming from a router ##
-          if (ttl % 2) > 0 and ttl > 1 and ttl != 255:
-              self.subnet.gatewaymac = e.get_ether_shost()
-              self.subnet.sourcemac = e.get_ether_dhost()
-              self.subnet.sourceaddress = ip.get_ip_dst()
+            #print e.child().get_ip_src()
+            ip = e.child()
+            ttl = ip.get_ip_ttl()
+            ## Uneven but not 1 or 255 ttl means it's probably coming from a router ##
+            if (ttl % 2) > 0 and ttl > 1 and ttl != 255:
+                self.subnet.gatewaymac = e.get_ether_shost()
+                self.subnet.sourcemac = e.get_ether_dhost()
+                self.subnet.sourceaddress = ip.get_ip_dst()
 
         if e.get_ether_type() == impacket.ImpactPacket.ARP.ethertype:
-          arp = e.child()
-          self.subnet.registeraddress(arp.get_ar_tpa())
-          self.subnet.registeraddress(arp.get_ar_spa())
-          
-          if arp.get_op_name(arp.get_ar_op()) == "REPLY":
-              print "got arp reply"
-              self.arptable.registeraddress(arp.get_ar_spa(), arp.as_hrd(arp.get_ar_sha()))
-	  if arp.get_op_name(arp.get_ar_op()) == "REQUEST":
-              self.arptable.registeraddress(arp.get_ar_spa(), arp.as_hrd(arp.get_ar_sha()))
+            arp = e.child()
+            self.subnet.registeraddress(arp.get_ar_tpa())
+            self.subnet.registeraddress(arp.get_ar_spa())
 
+            if arp.get_op_name(arp.get_ar_op()) == "REPLY":
+                print "got arp reply"
+                self.arptable.registeraddress(arp.get_ar_spa(), arp.as_hrd(arp.get_ar_sha()))
+            if arp.get_op_name(arp.get_ar_op()) == "REQUEST":
+                self.arptable.registeraddress(arp.get_ar_spa(), arp.as_hrd(arp.get_ar_sha()))
 
 
 class ArpTable():
@@ -75,12 +70,12 @@ class ArpTable():
 
     def registeraddress(self,ip_array, hw_address):
         ip = self.printip(ip_array)
-	if ip != "0.0.0.0":
- 		self.table[ip] = hw_address
-		print "%s : %s" % (ip, hw_address)
-        
+        if ip != "0.0.0.0":
+            self.table[ip] = hw_address
+            print "%s : %s" % (ip, hw_address)
+
     def printip(self,ip_array):
-        ip_string = socket.inet_ntoa(struct.pack('BBBB', *ip_array))        
+        ip_string = socket.inet_ntoa(struct.pack('BBBB', *ip_array))
         return ip_string
 
     def updatekernel(self):
@@ -92,6 +87,7 @@ class ArpTable():
             result = p.read()
             p.close()
 
+
 ## Only supports /24 or smaller
 class Subnet():
     sourcemac = None
@@ -101,7 +97,7 @@ class Subnet():
     maxaddress = None
     sourceaddress = None
     gatewayaddress = ""
-    
+
     confidence = 0
 
     def registeraddress(self,ip_array):
@@ -118,7 +114,6 @@ class Subnet():
             print self.printip(ip_array)
             print "[!] Error, duplicate or big subnet detected"
 
-        
     def checksubnet(self,ip_array):
         if self.subnet == None:
             self.subnet = ip_array
@@ -129,7 +124,7 @@ class Subnet():
             return False
 
     def printip(self,ip_array):
-        ip_string = socket.inet_ntoa(struct.pack('BBBB', *ip_array))        
+        ip_string = socket.inet_ntoa(struct.pack('BBBB', *ip_array))
         return ip_string
 
     def getcidr(self):
@@ -143,16 +138,17 @@ class Subnet():
             return bits
         else:
             return 0
+
     def get_gatewaymac(self):
         ethernet = impacket.ImpactPacket.Ethernet()
-	temp = ethernet.as_eth_addr(self.gatewaymac)
+        temp = ethernet.as_eth_addr(self.gatewaymac)
         temp = re.sub(r':(\d):',r':0\1:', temp)
         return temp
 
     def get_sourcemac(self):
         ethernet = impacket.ImpactPacket.Ethernet()
         return ethernet.as_eth_addr(self.sourcemac)
-    
+
     def __str__(self):
         ethernet = impacket.ImpactPacket.Ethernet()
         header = "Network config: \n"
@@ -172,6 +168,7 @@ class Subnet():
         else:
             return header + output
 
+
 ## Create ebtables, arptables and iptables rules based on a subnet object
 class Netfilter():
     subnet = None
@@ -182,6 +179,7 @@ class Netfilter():
     gatewayinterface = "eth9"
     bridgeinterface = "mibr"
     bridgeip = "169.254.66.77"
+
     def __init__(self, subnet, bridge):
         self.subnet = subnet
         os.system("sh ./ebtables-init")
@@ -190,14 +188,12 @@ class Netfilter():
         os.system("arptables -A OUTPUT -o eth1 -j DROP")
         os.system("arptables -A OUTPUT -o eth2 -j DROP")
 
-        
-
     def updatetables(self):
         os.system("sh ./ebtables-init")
         os.system("ebtables -A OUTPUT -j DROP")
         os.system("arptables -A OUTPUT -j DROP")
         print "searching for mac: %s ..." % subnet.get_gatewaymac()
-        f=os.popen("brctl showmacs %s | grep %s | awk '{print $1}'" % (self.bridgeinterface, subnet.get_gatewaymac()))            
+        f=os.popen("brctl showmacs %s | grep %s | awk '{print $1}'" % (self.bridgeinterface, subnet.get_gatewaymac()))
         portnumber =  f.read().rstrip()
         f.close()
         if(portnumber == ""):
@@ -206,7 +202,7 @@ class Netfilter():
         print "portnumber is: %s" % portnumber
         run = "brctl showstp %s | grep '(%s)' | head -n1 | awk '{print $1}'" % (self.bridgeinterface, portnumber)
         print run
-                                                                                
+
         x = os.popen(run)
         interface = x.read()
         x.close()
@@ -244,7 +240,7 @@ class Netfilter():
 class Bridge():
     subnet = None
     bridgename = None
-    
+
     def __init__(self, bridgename, interfaces):
         self.bridgename = bridgename
         os.system("brctl addbr %s" % bridgename)
@@ -252,8 +248,7 @@ class Bridge():
         os.system("ip addr flush dev %s" % bridgename)
         os.system("macchanger -p %s" % bridgename)
         os.system("ip link set up %s" % bridgename)
-        
-      
+
         for interface in interfaces:
             os.system("ip link set %s down" % interface)
             os.system("sysctl -w net.ipv6.conf.%s.autoconf=0" % interface)
@@ -261,8 +256,9 @@ class Bridge():
             os.system("brctl addif %s %s" % (bridgename, interface))
             os.system("ip link set %s up" % interface)
             os.system("ip link set promisc on %s" % interface)
+
         os.system("sysctl -w net.ipv6.conf.%s.autoconf=0" % bridgename)
-        os.system("sysctl -w net.ipv6.conf.%s.accept_ra=0" % bridgename)            
+        os.system("sysctl -w net.ipv6.conf.%s.accept_ra=0" % bridgename)
         os.system("ip link set promisc on %s" % bridgename)
         os.system("echo 8 > /sys/class/net/mibr/bridge/group_fwd_mask")
 
@@ -299,6 +295,12 @@ if __name__ == '__main__':
 
     # setup routing 
     os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
+    #os.system("ifconfig wlan0 169.254.44.44/24")
+    #os.system("ifconfig wlan0 up")
+    #os.system("/usr/sbin/dhcpd -4 -pf /run/dhcpd4.pid wlan0")
+    #os.system("udhcpd /etc/udhcpd-wlan0.conf")
+    #os.system("/usr/local/bin/hostapd -B /etc/hostapd/hostapd.conf")
+
     time.sleep(5)
     if(sslsniff):
     	os.system("iptables -t nat -s %s -A PREROUTING  -p tcp --dport 443 -j DNAT --to-destination 169.254.44.44" % subnet.sourceaddress)
