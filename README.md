@@ -19,30 +19,25 @@ Also see apt-get command in the steps above.
 python2
 pycrypto
 python2-pcapy
-impacket
+impacket from https://github.com/c0d3z3r0/impacket
 libpcap
 bridge-utils
 ebtables
 iptables
 arptables
 hostapd
+macchanger
+
 
 Stealth
 ========
 
-```
-#run following commands
-update-rc.d apache2 disable
-echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/40-ipv6.conf
-update-rc.d avahi-daemon remove
-
-```
-
-Comment the first rule "BeagleBone: net device ()" in /etc/udev/rules.d/70-persistent-net.rules because it stops additional ethernet interfaces from working.
+Use the `-q` parameter to prevent any output originating from us.
+This is for sniffing-only purpose.
 
 
-
-
+Hostapd
+========
 
 hostapd.conf
 
@@ -122,6 +117,17 @@ Update the listenaddress in /etc/ssh/sshd_config
 ListenAddress 169.254.44.44
 
 ```
+
+```bash
+ifconfig wlan0 169.254.44.44/24
+ifconfig wlan0 up
+# dhcpd ...
+dhcpd -4 -pf /run/dhcpd4.pid wlan0
+# ... or udhcpd
+udhcpd /etc/udhcpd-wlan0.conf
+hostapd -B ./hostapd.conf
+```
+
 
 License
 =======
