@@ -1,6 +1,24 @@
 #!/usr/bin/python2
-# Author: @jkadijk
-# Base decoderthread layout from the Impacket examples.
+#-Metadata----------------------------------------------------#
+#  Filename: autosniff.py                (Update: 2016-03-11) #
+#-Info--------------------------------------------------------#
+#  Raspberry Pi Kali dropbox automated script v2              #
+#-Author(s)---------------------------------------------------#
+#  jbarcia                                                    #
+#-Based off of -----------------------------------------------#
+#   @jkadij and @warpnet                                      #
+#-Operating System--------------------------------------------#
+#  Designed for: Raspberry Pi 2 - Kali Linux 2 [ARM]          #
+#     Tested on: Raspberry Pi 2 - Kali Linux 2 [ARM]          #
+#-Licence-----------------------------------------------------#
+#  MIT License ~ http://opensource.org/licenses/MIT           #
+#-Notes-------------------------------------------------------#
+#                                                             #
+#                             ---                             #
+#                                                             #
+#                                                             #
+#-------------------------------------------------------------#
+
 
 import sys
 import os
@@ -475,6 +493,24 @@ class Netfilter:
 ************************************************************************
 """
 
+    def wwantables(self):
+        logging.debug("Updating wwanfilter")
+
+        logging.info("[*] Setting up WWAN Rules")
+        os.system("iptables -A INPUT -i wwan0 -p tcp --dport 22 -m state --state NEW,ESTABLISHED -j ACCEPT")  # ACCEPT INBOUND SSH ON 22
+        os.system("iptables -A OUTPUT -o wwan0 -p tcp --sport 22 -m state --state ESTABLISHED -j ACCEPT")
+        os.system("iptables -A OUTPUT -o wwan0 -p tcp --dport 22 -m state --state NEW,ESTABLISHED -j ACCEPT")  # ACCEPT OUTBOUND SSH ON 22
+        os.system("iptables -A INPUT -i wwan0 -p tcp --sport 22 -m state --state ESTABLISHED -j ACCEPT")
+        os.system("iptables -A OUTPUT -o wwan0 -p tcp --dport 80 -m state --state NEW,ESTABLISHED -j ACCEPT")  # ACCEPT OUTBOUND SSH ON 80
+        os.system("iptables -A INPUT -i wwan0 -p tcp --sport 80 -m state --state ESTABLISHED -j ACCEPT")
+        os.system("iptables -A OUTPUT -o wwan0 -p tcp --dport 443 -m state --state NEW,ESTABLISHED -j ACCEPT")  # ACCEPT OUTBOUND SSH ON 443
+        os.system("iptables -A INPUT -i wwan0 -p tcp --sport 443 -m state --state ESTABLISHED -j ACCEPT")
+        os.system("iptables -A OUTPUT -o wwan0 -p udp --dport 53 -m state --state NEW,ESTABLISHED -j ACCEPT")  # ACCEPT OUTBOUND SSH ON 53
+        os.system("iptables -A INPUT -i wwan0 -p udp --sport 53 -m state --state ESTABLISHED -j ACCEPT")
+        os.system("iptables -A INPUT -i wwan0 -p icmp --icmp-type echo-request -j ACCEPT")  # ACCEPT INBOUND ICMP
+        os.system("iptables -A OUTPUT -i wwan0 -p icmp --icmp-type echo-reply -j ACCEPT")
+        os.system("iptables -A OUTPUT -i wwan0 -p icmp --icmp-type echo-request -j ACCEPT")  # ACCEPT OUTBOUND ICMP
+        os.system("iptables -A INPUT -i wwan0 -p icmp --icmp-type echo-reply -j ACCEPT")
 
 class Bridge:
     subnet = None
@@ -589,6 +625,8 @@ def main():
             bridge.setinterfacesides()
             if not args.radiosilence:
                 netfilter.updatetables()
+                if args.rev_host:
+                    netfilter.wwantables()
             else:
                 print """
 ******************************************************
@@ -653,6 +691,8 @@ if __name__ == '__main__':
                              "sleep between connect retries. This is useful "
                              "to prevent massive connection tries and thereby "
                              "decrease the risk of being discovered.")
+    parser.add_argument('-4G', '--enable-4G', default=None,
+                        help="Enable 4G iptable rules to allow SSH outbound. ")
     parser.add_argument('ifaces', metavar='IFACE', nargs='*',
                         default=['eth1', 'eth2'], help='Two interfaces')
     args = parser.parse_args()
