@@ -691,7 +691,7 @@ if __name__ == '__main__':
                              "sleep between connect retries. This is useful "
                              "to prevent massive connection tries and thereby "
                              "decrease the risk of being discovered.")
-    parser.add_argument('-4G', '--enable-4G', default=None,
+    parser.add_argument('-4G', '--enable-4G', action='store_true',
                         help="Enable 4G iptable rules to allow SSH outbound. ")
     parser.add_argument('ifaces', metavar='IFACE', nargs='*',
                         default=['eth1', 'eth2'], help='Two interfaces')
